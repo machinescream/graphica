@@ -2,12 +2,24 @@ import 'package:flutter/material.dart';
 
 class GraphData {
   final Color color;
-  final List<int> values;
+  final List<double> values;
 
   GraphData({
     required this.color,
     required this.values,
   });
+}
+
+class Activity {
+  final Color color;
+  final int start, end;
+
+  Activity({
+    required this.color,
+    required int start,
+    required int end,
+  })  : start = --start,
+        end = --end;
 }
 
 class Graphica extends StatelessWidget {
@@ -24,6 +36,7 @@ class Graphica extends StatelessWidget {
   final double graphsWidth;
   final double minScale;
   final double maxScale;
+  final List<Activity>? activities;
 
   const Graphica({
     super.key,
@@ -40,6 +53,7 @@ class Graphica extends StatelessWidget {
     this.graphsWidth = 2,
     this.minScale = 0.1,
     this.maxScale = 3.0,
+    this.activities,
   });
 
   @override
@@ -52,6 +66,7 @@ class Graphica extends StatelessWidget {
           backgroundColor: backgroundColor,
           dyIndicators: dyIndicators,
           graphs: graphs,
+          activities: activities,
           indicatorsPadding: indicatorsPadding,
           dxIndicators: dxIndicators,
           dyIndicatorsColor: dyIndicatorsColor,
@@ -78,10 +93,7 @@ class GraphicaPainter extends CustomPainter {
   final Color dyLineColor;
   final double lineWidth;
   final double graphsWidth;
-  final int xCap;
-  final int yCap;
-  final List<TextPainter> _dxTextPainters = [];
-  final List<TextPainter> _dyTextPainters = [];
+  final List<Activity>? activities;
 
   GraphicaPainter({
     this.backgroundColor = Colors.white,
@@ -91,70 +103,123 @@ class GraphicaPainter extends CustomPainter {
     required this.graphs,
     this.indicatorsPadding = 8,
     this.dxIndicators,
-    List<String>? dyIndicators,
+    this.dyIndicators,
     this.dyIndicatorsColor,
     this.dxIndicatorsColor,
     this.graphsWidth = 2,
-  })  : xCap =
-            graphs.map((g) => g.values.length).reduce((a, b) => a > b ? a : b),
-        yCap = graphs
-            .map((g) => g.values.reduce((a, b) => a > b ? a : b))
-            .reduce((a, b) => a > b ? a : b),
-        dyIndicators = dyIndicators?.reversed.toList() {
-    _initTextPainters();
+    this.activities,
+  })  : _dxMaxValue = _calculateDxMaxValue(graphs),
+        _dyMaxValue = _calculateYxMaxValue(graphs) {
+    if (dxIndicators != null) {
+      _setupDxPaintersAndCalculateSize(dxIndicators!);
+      _dyPadding = _dxIndicatorSize.height + indicatorsPadding;
+    }
+    if (dyIndicators != null) {
+      _setupDyPaintersAndCalculateSize(dyIndicators!);
+      _dxPadding = _dyIndicatorSize.width + indicatorsPadding;
+    }
   }
 
-  var _yOffstage = 0.0;
-  var _xOffstage = 0.0;
-  var _xIndicatorsWidth = 0.0;
-  var _xIndicatorsHeight = 0.0;
+  final int _dxMaxValue;
+  final double _dyMaxValue;
+  late var _dxIndicatorSize = Size.zero;
+  late var _dyIndicatorSize = Size.zero;
+  late var _dxPadding = 0.0;
+  late var _dyPadding = 0.0;
+  final List<TextPainter> _dxTextPainters = [];
+  final List<TextPainter> _dyTextPainters = [];
+
+  static int _calculateDxMaxValue(List<GraphData> graphs) {
+    return graphs.map((g) => g.values.length).reduce((a, b) => a > b ? a : b);
+  }
+
+  static double _calculateYxMaxValue(List<GraphData> graphs) {
+    return graphs
+        .map((g) => g.values.reduce((a, b) => a > b ? a : b))
+        .reduce((a, b) => a > b ? a : b);
+  }
+
+  void _setupDxPaintersAndCalculateSize(List<String> dxIndicators) {
+    late TextPainter painter;
+    for (final indicator in dxIndicators) {
+      painter = TextPainter(
+        text: TextSpan(
+          text: indicator,
+          style: TextStyle(color: dxIndicatorsColor),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      _dxTextPainters.add(painter);
+    }
+    _dxIndicatorSize = Size(painter.width, painter.height);
+  }
+
+  void _setupDyPaintersAndCalculateSize(List<String> dyIndicators) {
+    late TextPainter painter;
+    for (final indicator in dyIndicators) {
+      painter = TextPainter(
+        text: TextSpan(
+          text: indicator,
+          style: TextStyle(color: dyIndicatorsColor),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      _dyTextPainters.add(painter);
+    }
+    _dyIndicatorSize = Size(painter.width, painter.height);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
-    var h = size.height;
-    var w = size.width;
+    final dyPoint = size.height - _dyPadding;
+    final dxEnd = size.width - _dxIndicatorSize.width;
 
-    _paintBackground(canvas, h, w);
+    final dxStep = (size.width - _dxPadding - _dxIndicatorSize.width) / (_dxMaxValue - 1);
+    final dyStep = dyPoint / _dyMaxValue;
 
-    final xCap =
-        graphs.map((g) => g.values.length - 1).reduce((a, b) => a > b ? a : b);
-
-    final yCap = graphs
-        .map((g) => g.values.reduce((a, b) => a > b ? a : b))
-        .reduce((a, b) => a > b ? a : b);
-
-    final dyStep = (h - _yOffstage) / yCap;
+    _paintBackground(canvas, dyPoint, dxEnd);
 
     if (dyIndicators != null) {
       _paintYIndicators(canvas, dyStep);
     }
 
-    final dxStep = (w - _xIndicatorsWidth - _xOffstage) / xCap;
-
     if (dxIndicators != null) {
-      _paintXIndicators(canvas, dxStep, h);
+      _paintXIndicators(canvas, dxStep, size.height - _dxIndicatorSize.height);
     }
 
-    _paintXLines(canvas, dxStep, h);
-    _paintYLines(canvas, dyStep, w, h);
-    h = h - _yOffstage;
+    if (activities != null) {
+      _paintActivities(canvas, dyPoint, dxStep);
+    }
+
+    _paintXLines(canvas, dxStep, dyPoint);
+    _paintYLines(canvas, dyStep, dxEnd, dyPoint);
 
     for (final g in graphs) {
       final values = g.values;
       if (values.length < 2) continue;
 
       final path = Path();
-      path.moveTo(dxStep * 0 + _xOffstage, h - (h / yCap * values[0]));
+      path.moveTo(dxStep * 0 + _dxPadding,
+          dyPoint - (dyPoint / _dyMaxValue * values[0]));
 
       for (int i = 0; i < values.length - 1; i++) {
-        final p1 = Offset(dxStep * i + _xOffstage, h - (h / yCap * values[i]));
-        final p2 = Offset(dxStep * (i + 1) + _xOffstage, h - (h / yCap * values[i + 1]));
+        final p1 = Offset(dxStep * i + _dxPadding,
+            dyPoint - (dyPoint / _dyMaxValue * values[i]));
+        final p2 = Offset(dxStep * (i + 1) + _dxPadding,
+            dyPoint - (dyPoint / _dyMaxValue * values[i + 1]));
 
         final t = i / (values.length - 1);
         final control1 = Offset.lerp(p1, p2, t)!;
         final control2 = Offset.lerp(p1, p2, t + 1 / (values.length - 1))!;
 
-        path.cubicTo(control1.dx, control1.dy, control2.dx, control2.dy, p2.dx, p2.dy);
+        path.cubicTo(
+          control1.dx,
+          control1.dy,
+          control2.dx,
+          control2.dy,
+          p2.dx,
+          p2.dy,
+        );
       }
 
       canvas.drawPath(
@@ -169,45 +234,25 @@ class GraphicaPainter extends CustomPainter {
     }
   }
 
-  void _initTextPainters() {
-    if (dxIndicators != null) {
-      late TextPainter painter;
-      for (final indicator in dxIndicators!) {
-        painter = TextPainter(
-          text: TextSpan(
-            text: indicator,
-            style: TextStyle(color: dxIndicatorsColor),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        _xIndicatorsHeight = painter.height;
-        _xIndicatorsWidth = painter.width;
-        _yOffstage = _xIndicatorsHeight + indicatorsPadding;
-        _dxTextPainters.add(painter);
-      }
-    }
-
-    if (dyIndicators != null) {
-      late TextPainter painter;
-      for (final indicator in dyIndicators!) {
-        painter = TextPainter(
-          text: TextSpan(
-            text: indicator,
-            style: TextStyle(color: dyIndicatorsColor),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        _xOffstage = painter.width + indicatorsPadding;
-        _dyTextPainters.add(painter);
-      }
+  void _paintActivities(Canvas canvas, double dyPoint, double dxStep) {
+    for (final activity in activities!) {
+      canvas.drawRect(
+        Rect.fromPoints(
+          Offset(dxStep * activity.start + _dxPadding, 0),
+          Offset(dxStep * activity.end + _dxPadding, dyPoint),
+        ),
+        Paint()
+          ..style = PaintingStyle.fill
+          ..color = activity.color,
+      );
     }
   }
 
-  void _paintBackground(Canvas canvas, double h, double w) {
+  void _paintBackground(Canvas canvas, double dyPoint, double dxPoint) {
     canvas.drawRect(
       Rect.fromPoints(
-        Offset(_xOffstage, 0),
-        Offset(w - _xIndicatorsWidth, h - _yOffstage),
+        Offset(_dxPadding, 0),
+        Offset(dxPoint, dyPoint),
       ),
       Paint()
         ..style = PaintingStyle.fill
@@ -215,12 +260,12 @@ class GraphicaPainter extends CustomPainter {
     );
   }
 
-  void _paintXLines(Canvas canvas, double dxStep, double h) {
-    for (var x = 0; x < xCap; x++) {
-      final xOffset = dxStep * x + _xOffstage;
+  void _paintXLines(Canvas canvas, double dxStep, dyPoint) {
+    for (var x = 0; x < _dxMaxValue; x++) {
+      final xOffset = dxStep * x + _dxPadding;
       canvas.drawLine(
         Offset(xOffset, 0),
-        Offset(xOffset, h - _yOffstage),
+        Offset(xOffset, dyPoint),
         Paint()
           ..color = dxLineColor
           ..strokeWidth = lineWidth,
@@ -228,12 +273,13 @@ class GraphicaPainter extends CustomPainter {
     }
   }
 
-  void _paintYLines(Canvas canvas, double dyStep, double w, double h) {
-    for (var y = 0; y < yCap; y++) {
-      final yOffset = h - dyStep * y - _yOffstage;
+  void _paintYLines(
+      Canvas canvas, double dyStep, double dxPoint, double dyPoint) {
+    for (var y = 0; y < _dyMaxValue; y++) {
+      final yOffset = dyPoint - dyStep * y;
       canvas.drawLine(
-        Offset(_xOffstage, yOffset),
-        Offset(w - _xIndicatorsWidth, yOffset),
+        Offset(_dxPadding, yOffset),
+        Offset(dxPoint, yOffset),
         Paint()
           ..color = dyLineColor
           ..strokeWidth = lineWidth,
@@ -241,18 +287,21 @@ class GraphicaPainter extends CustomPainter {
     }
   }
 
-  void _paintXIndicators(Canvas canvas, double dxStep, double h) {
-    for (var x = 0; x < xCap; x++) {
+  void _paintXIndicators(Canvas canvas, double dxStep, double dyPosition) {
+    for (var x = 0; x < _dxMaxValue; x++) {
+      final dxPosition = x * dxStep + _dxPadding;
       _dxTextPainters[x].paint(
         canvas,
-        Offset(x * dxStep + _xOffstage, h - _xIndicatorsHeight),
+        Offset(dxPosition, dyPosition),
       );
     }
   }
 
   void _paintYIndicators(Canvas canvas, double dyStep) {
-    for (var y = 0; y < yCap + 1; y++) {
-      _dyTextPainters[y].paint(
+    final length = dyIndicators!.length;
+
+    for (var y = 0; y < length; y++) {
+      _dyTextPainters[length - y - 1].paint(
         canvas,
         Offset(0, y * dyStep),
       );
@@ -272,4 +321,8 @@ class GraphicaPainter extends CustomPainter {
         oldDelegate.lineWidth != lineWidth ||
         oldDelegate.graphsWidth != graphsWidth;
   }
+}
+
+extension SizeToOffsetConverter on Size {
+  Offset get asOffset => Offset(width, height);
 }
