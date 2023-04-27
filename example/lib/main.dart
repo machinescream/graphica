@@ -25,9 +25,7 @@ String monthAbbreviation(int month) {
 }
 
 void main() {
-
   runApp(MaterialApp(
-
     home: ColoredBox(
       color: Colors.white,
       child: Center(
@@ -50,12 +48,11 @@ void main() {
             ],
             dyIndicators: List.generate(
               10,
-                  (index) => "$index",
+              (index) => "$index",
             ),
             dxIndicators: List.generate(
               12,
-                  (index) =>
-                  monthAbbreviation(DateTime.utc(2008, index).month),
+              (index) => monthAbbreviation(DateTime.utc(2008, index).month),
             ),
             graphs: [
               GraphData(

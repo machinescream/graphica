@@ -126,8 +126,8 @@ class GraphicaPainter extends CustomPainter {
   late var _dyIndicatorSize = Size.zero;
   late var _dxPadding = 0.0;
   late var _dyPadding = 0.0;
-  final List<TextPainter> _dxTextPainters = [];
-  final List<TextPainter> _dyTextPainters = [];
+  final List<TextPainter> _dxIndicatorPainters = [];
+  final List<TextPainter> _dyIndicatorPainters = [];
 
   static int _calculateDxMaxValue(List<GraphData> graphs) {
     return graphs.map((g) => g.values.length).reduce((a, b) => a > b ? a : b);
@@ -149,7 +149,7 @@ class GraphicaPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      _dxTextPainters.add(painter);
+      _dxIndicatorPainters.add(painter);
     }
     _dxIndicatorSize = Size(painter.width, painter.height);
   }
@@ -164,49 +164,58 @@ class GraphicaPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      _dyTextPainters.add(painter);
+      _dyIndicatorPainters.insert(0, painter);
     }
     _dyIndicatorSize = Size(painter.width, painter.height);
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final dyPoint = size.height - _dyPadding;
-    final dxEnd = size.width - _dxIndicatorSize.width;
+    final dxStep = (size.width - _dxPadding - _dxIndicatorSize.width) /
+        (_dxIndicatorPainters.length - 1);
+    _paintXIndicators(canvas, dxStep, size.height - _dxIndicatorSize.height);
 
-    final dxStep = (size.width - _dxPadding - _dxIndicatorSize.width) / (_dxMaxValue - 1);
-    final dyStep = dyPoint / _dyMaxValue;
+    final dyStep =
+        (size.height - _dyPadding) / (_dyIndicatorPainters.length - 1);
+    _paintYIndicators(canvas, dyStep);
 
-    _paintBackground(canvas, dyPoint, dxEnd);
+    canvas.translate(_dxPadding, 0);
 
-    if (dyIndicators != null) {
-      _paintYIndicators(canvas, dyStep);
-    }
+    final paintSize = Size(
+      size.width - _dxPadding - _dxIndicatorSize.width,
+      size.height - _dyPadding,
+    );
 
-    if (dxIndicators != null) {
-      _paintXIndicators(canvas, dxStep, size.height - _dxIndicatorSize.height);
-    }
+    _paintBackground(canvas, paintSize);
+    _paintXLines(
+      canvas,
+      paintSize.width / (_dxIndicatorPainters.length - 1),
+      paintSize.height,
+    );
+
+    _paintYLines(
+      canvas,
+      paintSize.height / (_dyIndicatorPainters.length - 1),
+      paintSize.width,
+    );
 
     if (activities != null) {
-      _paintActivities(canvas, dyPoint, dxStep);
+      _paintActivities(canvas, paintSize.height, dxStep);
     }
 
-    _paintXLines(canvas, dxStep, dyPoint);
-    _paintYLines(canvas, dyStep, dxEnd, dyPoint);
-
+    final h = paintSize.height;
     for (final g in graphs) {
       final values = g.values;
       if (values.length < 2) continue;
 
       final path = Path();
-      path.moveTo(dxStep * 0 + _dxPadding,
-          dyPoint - (dyPoint / _dyMaxValue * values[0]));
+      path.moveTo(dxStep * 0, h - (h / _dyMaxValue * values[0]));
 
       for (int i = 0; i < values.length - 1; i++) {
-        final p1 = Offset(dxStep * i + _dxPadding,
-            dyPoint - (dyPoint / _dyMaxValue * values[i]));
-        final p2 = Offset(dxStep * (i + 1) + _dxPadding,
-            dyPoint - (dyPoint / _dyMaxValue * values[i + 1]));
+        final p1 =
+            Offset(dxStep * i, h - (h / _dyMaxValue * values[i]));
+        final p2 = Offset(dxStep * (i + 1),
+            h - (h / _dyMaxValue * values[i + 1]));
 
         final t = i / (values.length - 1);
         final control1 = Offset.lerp(p1, p2, t)!;
@@ -238,8 +247,8 @@ class GraphicaPainter extends CustomPainter {
     for (final activity in activities!) {
       canvas.drawRect(
         Rect.fromPoints(
-          Offset(dxStep * activity.start + _dxPadding, 0),
-          Offset(dxStep * activity.end + _dxPadding, dyPoint),
+          Offset(dxStep * activity.start - lineWidth, 0),
+          Offset(dxStep * activity.end - lineWidth, dyPoint),
         ),
         Paint()
           ..style = PaintingStyle.fill
@@ -248,11 +257,11 @@ class GraphicaPainter extends CustomPainter {
     }
   }
 
-  void _paintBackground(Canvas canvas, double dyPoint, double dxPoint) {
+  void _paintBackground(Canvas canvas, Size size) {
     canvas.drawRect(
       Rect.fromPoints(
-        Offset(_dxPadding, 0),
-        Offset(dxPoint, dyPoint),
+        Offset.zero,
+        size.asOffset,
       ),
       Paint()
         ..style = PaintingStyle.fill
@@ -261,50 +270,54 @@ class GraphicaPainter extends CustomPainter {
   }
 
   void _paintXLines(Canvas canvas, double dxStep, dyPoint) {
-    for (var x = 0; x < _dxMaxValue; x++) {
-      final xOffset = dxStep * x + _dxPadding;
+    var position = 0;
+    for (final _ in _dxIndicatorPainters) {
+      final dx = position * dxStep - lineWidth;
       canvas.drawLine(
-        Offset(xOffset, 0),
-        Offset(xOffset, dyPoint),
+        Offset(dx, 0),
+        Offset(dx, dyPoint),
         Paint()
           ..color = dxLineColor
           ..strokeWidth = lineWidth,
       );
+      position++;
     }
   }
 
-  void _paintYLines(
-      Canvas canvas, double dyStep, double dxPoint, double dyPoint) {
-    for (var y = 0; y < _dyMaxValue; y++) {
-      final yOffset = dyPoint - dyStep * y;
+  void _paintYLines(Canvas canvas, double dyStep, double dxPoint) {
+    var position = 0;
+    for (final _ in _dxIndicatorPainters) {
+      final dy = position * dyStep;
       canvas.drawLine(
-        Offset(_dxPadding, yOffset),
-        Offset(dxPoint, yOffset),
+        Offset(0, dy),
+        Offset(dxPoint, dy),
         Paint()
           ..color = dyLineColor
           ..strokeWidth = lineWidth,
       );
+      position++;
     }
   }
 
   void _paintXIndicators(Canvas canvas, double dxStep, double dyPosition) {
-    for (var x = 0; x < _dxMaxValue; x++) {
-      final dxPosition = x * dxStep + _dxPadding;
-      _dxTextPainters[x].paint(
+    var position = 0;
+    for (final painter in _dxIndicatorPainters) {
+      painter.paint(
         canvas,
-        Offset(dxPosition, dyPosition),
+        Offset(position * dxStep + _dxPadding, dyPosition),
       );
+      position++;
     }
   }
 
   void _paintYIndicators(Canvas canvas, double dyStep) {
-    final length = dyIndicators!.length;
-
-    for (var y = 0; y < length; y++) {
-      _dyTextPainters[length - y - 1].paint(
+    var position = 0;
+    for (final painter in _dyIndicatorPainters) {
+      painter.paint(
         canvas,
-        Offset(0, y * dyStep),
+        Offset(0, position * dyStep),
       );
+      position++;
     }
   }
 
